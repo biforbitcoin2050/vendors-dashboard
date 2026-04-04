@@ -1,6 +1,7 @@
 // src/lib/supabase/server.ts
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieMethodsServer } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export function createClient() {
   const cookieStore = cookies()
@@ -10,20 +11,18 @@ export function createClient() {
     {
       cookies: {
         getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: Parameters<CookieMethodsServer['setAll']>[0]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
-          } catch {}
+          } catch { }
         },
       },
     }
   )
 }
 
-// Service role client (bypasses RLS — for webhook)
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 export function createServiceClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
