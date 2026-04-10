@@ -1,5 +1,5 @@
 // src/lib/types.ts
-// Database types matching the Supabase schema
+// Database types matching the Supabase schema (per .MD spec)
 
 export type OrderStatus = 'EN_LIVRAISON' | 'LIVREE' | 'RETOUR' | 'ECHANGE'
 export type PayoutStatus = 'EN_ATTENTE' | 'SENT'
@@ -18,11 +18,14 @@ export interface Order {
   product_id: string | null
   vendor_id: string | null
   vendor_name: string | null
-  product_cost: number
-  printing_cost: number
-  production_total: number   // computed
-  vendor_benefice: number
-  merch_benefice: number
+
+  // Pricing fields (per .MD spec)
+  prix_client: number         // From WooCommerce — what client paid
+  prix_fournisseur: number    // Entered by employee — supplier cost
+  benefice_merch: number      // Entered by employee — our margin
+  prix_vendeur: number        // COMPUTED: prix_fournisseur + benefice_merch
+  benefice_vendeur: number    // COMPUTED: prix_client - prix_vendeur
+
   status: OrderStatus
   note: string | null
   is_vendor_paid: boolean
@@ -36,9 +39,9 @@ export interface Payout {
   id: string
   vendor_id: string
   total_orders: number
-  total_vendor_benefice: number
-  retour_loss: number
-  net_payout: number          // computed
+  total_vendor_benefice: number  // sum of benefice_vendeur for LIVREE orders
+  retour_loss: number            // sum of prix_vendeur for RETOUR orders
+  net_payout: number             // COMPUTED: total_vendor_benefice - retour_loss
   date: string
   status: PayoutStatus
   note: string | null
@@ -68,10 +71,11 @@ export interface VendorStats {
   total_orders: number
   delivered_orders: number
   retour_orders: number
-  total_benefice: number
-  total_retour_loss: number
-  net_vendor_profit: number
-  merch_total_profit: number
+  total_benefice: number        // SUM(benefice_vendeur) WHERE LIVREE
+  total_retour_loss: number     // SUM(prix_vendeur) WHERE RETOUR
+  net_vendor_profit: number     // total_benefice - total_retour_loss
+  merch_total_profit: number    // SUM(benefice_merch) WHERE LIVREE
+  total_revenue: number         // SUM(prix_client) WHERE LIVREE
 }
 
 export interface DashboardKPIs {
@@ -82,4 +86,5 @@ export interface DashboardKPIs {
   total_merch_profit: number
   total_vendor_profit: number
   total_production_cost: number
+  total_revenue: number
 }

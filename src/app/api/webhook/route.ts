@@ -18,7 +18,7 @@ function verifySignature(body: string, signature: string | null): boolean {
   return hmac === signature
 }
 
-// Extract vendor_id from WooCommerce order meta
+// Extract a value from WooCommerce order meta
 function extractMeta(meta_data: Array<{ key: string; value: unknown }>, key: string): string | null {
   const entry = meta_data?.find((m) => m.key === key)
   return entry ? String(entry.value) : null
@@ -28,7 +28,6 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text()
   const signature = req.headers.get('x-wc-webhook-signature')
 
-  // Validate signature
   if (!verifySignature(rawBody, signature)) {
     console.warn('[webhook] Invalid signature')
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -44,27 +43,31 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient()
 
   try {
-    // ── Extract fields from WooCommerce payload ──────────────────────────
-    const order_ref     = String(payload.number ?? payload.id ?? '')
-    const client_phone  = extractMeta(payload.meta_data as [], '_billing_phone')
-                          ?? (payload.billing as Record<string,string>)?.phone ?? null
-    const product_id    = (payload.line_items as Array<{ product_id: number }>)?.[0]?.product_id?.toString() ?? null
+    // ── Extract fields from WooCommerce payload ──────────────────────────────
+    const order_ref    = String(payload.number ?? payload.id ?? '')
+    const client_phone = extractMeta(payload.meta_data as [], '_billing_phone')
+                         ?? (payload.billing as Record<string, string>)?.phone ?? null
+    const product_id   = (payload.line_items as Array<{ product_id: number }>)?.[0]?.product_id?.toString() ?? null
     const vendor_id_raw = extractMeta(payload.meta_data as [], 'vendor_id')
     const vendor_name   = extractMeta(payload.meta_data as [], 'vendor_name') ?? null
-    const product_cost  = parseFloat(extractMeta(payload.meta_data as [], 'product_cost') ?? '0')
-    const printing_cost = parseFloat(extractMeta(payload.meta_data as [], 'printing_cost') ?? '0')
-    const vendor_benefice = parseFloat(extractMeta(payload.meta_data as [], 'vendor_benefice') ?? '0')
-    const merch_benefice  = parseFloat(extractMeta(payload.meta_data as [], 'merch_benefice') ?? '0')
+
+    // Prix Client = payload.total (what the client actually paid)
+    // per .MD spec: this is the ONLY pricing field that comes from WooCommerce
+    const prix_client = parseFloat(String(payload.total ?? '0')) || 0
+
+    // prix_fournisseur and benefice_merch default to 0
+    // They will be filled in manually by the employee via the dashboard
+    const prix_fournisseur = 0
+    const benefice_merch   = 0
 
     if (!order_ref) {
       return NextResponse.json({ error: 'Missing order_ref' }, { status: 400 })
     }
 
-    // ── Resolve vendor ────────────────────────────────────────────────────
+    // ── Resolve vendor ─────────────────────────────────────────────────────────
     let vendor_id: string | null = null
 
     if (vendor_id_raw) {
-      // Check if vendor exists by id
       const { data: existingVendor } = await supabase
         .from('vendors')
         .select('id')
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
       if (existingVendor) {
         vendor_id = existingVendor.id
       } else if (vendor_name) {
-        // Vendor id sent but not found — auto-create
+        // Vendor ID sent but not found — auto-create per .MD spec
         const { data: newVendor, error: vendorErr } = await supabase
           .from('vendors')
           .insert({ id: vendor_id_raw, name: vendor_name })
@@ -89,7 +92,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Upsert order ──────────────────────────────────────────────────────
+    // ── Upsert order ───────────────────────────────────────────────────────────
+    // Only set prix_client from webhook. Employee will fill in prix_fournisseur
+    // and benefice_merch manually. DB computes prix_vendeur and benefice_vendeur.
     const { error: orderErr } = await supabase
       .from('orders')
       .upsert(
@@ -99,10 +104,9 @@ export async function POST(req: NextRequest) {
           product_id,
           vendor_id,
           vendor_name,
-          product_cost,
-          printing_cost,
-          vendor_benefice,
-          merch_benefice,
+          prix_client,
+          prix_fournisseur,
+          benefice_merch,
           status: 'EN_LIVRAISON',
         },
         { onConflict: 'order_ref', ignoreDuplicates: false }
@@ -113,8 +117,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: orderErr.message }, { status: 500 })
     }
 
-    console.log(`[webhook] Order ${order_ref} upserted OK`)
-    return NextResponse.json({ ok: true, order_ref })
+    console.log(`[webhook] Order ${order_ref} upserted OK — prix_client: ${prix_client}`)
+    return NextResponse.json({ ok: true, order_ref, prix_client })
 
   } catch (err) {
     console.error('[webhook] Unexpected error:', err)

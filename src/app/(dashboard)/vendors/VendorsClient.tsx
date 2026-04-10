@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { VendorStats } from '@/lib/types'
 import { fmt } from '@/lib/utils'
-import { Plus, X, Users } from 'lucide-react'
+import { Plus, X, Users, Search } from 'lucide-react'
 
 export default function VendorsClient({ stats }: { stats: VendorStats[] }) {
   const router = useRouter()
@@ -15,6 +15,9 @@ export default function VendorsClient({ stats }: { stats: VendorStats[] }) {
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Search filter
+  const [search, setSearch] = useState('')
 
   async function createVendor() {
     if (!name.trim()) { setError('Name is required'); return }
@@ -26,8 +29,12 @@ export default function VendorsClient({ stats }: { stats: VendorStats[] }) {
     router.refresh()
   }
 
+  const filtered = stats.filter(v =>
+    !search || v.vendor_name.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
-    <div style={{ maxWidth: 1100 }}>
+    <div style={{ maxWidth: 1200 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Vendors</h1>
@@ -63,6 +70,18 @@ export default function VendorsClient({ stats }: { stats: VendorStats[] }) {
         </div>
       )}
 
+      {/* Search */}
+      <div style={{ position: 'relative', maxWidth: 280, marginBottom: 16 }}>
+        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+        <input
+          className="input"
+          style={{ paddingLeft: 32 }}
+          placeholder="Search vendors…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* Table */}
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="data-table">
@@ -70,58 +89,81 @@ export default function VendorsClient({ stats }: { stats: VendorStats[] }) {
             <tr>
               <th>Vendor</th>
               <th>Total Orders</th>
-              <th>Delivered</th>
+              <th>Livrées</th>
               <th>Retours</th>
-              <th>Benefice (DA)</th>
-              <th>Retour Loss (DA)</th>
-              <th>Net Profit (DA)</th>
-              <th>Merch Profit (DA)</th>
+              <th>Delivery Rate</th>
+              <th>Revenu (Prix Client)</th>
+              <th>Bénéfice Vendeur</th>
+              <th>Retour Loss</th>
+              <th>Net Profit</th>
+              <th>Bénéfice Merch</th>
             </tr>
           </thead>
           <tbody>
-            {stats.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: 48 }}>
+                <td colSpan={10} style={{ textAlign: 'center', padding: 48 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--text-muted)' }}>
                     <Users size={32} strokeWidth={1.2} />
-                    <span>No vendors yet. Create one above.</span>
+                    <span>{search ? 'No vendors match your search.' : 'No vendors yet. Create one above.'}</span>
                   </div>
                 </td>
               </tr>
             )}
-            {stats.map(v => (
-              <tr
-                key={v.vendor_id}
-                style={{ cursor: 'pointer' }}
-                onClick={() => router.push(`/vendors/${v.vendor_id}`)}
-              >
-                <td>
-                  <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{v.vendor_name}</span>
-                </td>
-                <td style={{ color: 'var(--text-secondary)' }}>{v.total_orders}</td>
-                <td>
-                  <span style={{ color: 'var(--success)', fontWeight: 500 }}>{v.delivered_orders}</span>
-                </td>
-                <td>
-                  <span style={{ color: v.retour_orders > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                    {v.retour_orders}
-                  </span>
-                </td>
-                <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13 }}>{fmt(v.total_benefice)}</td>
-                <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: v.total_retour_loss > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                  {v.total_retour_loss > 0 ? `−${fmt(v.total_retour_loss)}` : '—'}
-                </td>
-                <td style={{
-                  fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600,
-                  color: v.net_vendor_profit >= 0 ? 'var(--success)' : 'var(--danger)'
-                }}>
-                  {fmt(v.net_vendor_profit)}
-                </td>
-                <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--accent)' }}>
-                  {fmt(v.merch_total_profit)}
-                </td>
-              </tr>
-            ))}
+            {filtered.map(v => {
+              const deliveryRate = v.total_orders > 0
+                ? Math.round((v.delivered_orders / v.total_orders) * 100)
+                : 0
+              return (
+                <tr
+                  key={v.vendor_id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => router.push(`/vendors/${v.vendor_id}`)}
+                >
+                  <td>
+                    <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{v.vendor_name}</span>
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{v.total_orders}</td>
+                  <td>
+                    <span style={{ color: 'var(--success)', fontWeight: 500 }}>{v.delivered_orders}</span>
+                  </td>
+                  <td>
+                    <span style={{ color: v.retour_orders > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                      {v.retour_orders}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 100 }}>
+                      <div style={{ flex: 1, height: 4, background: 'var(--bg-border)', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${deliveryRate}%`,
+                          background: deliveryRate >= 70 ? 'var(--success)' : deliveryRate >= 50 ? 'var(--warning)' : 'var(--danger)',
+                          borderRadius: 2,
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', minWidth: 32 }}>{deliveryRate}%</span>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--accent)' }}>
+                    {fmt(v.total_revenue ?? 0)}
+                  </td>
+                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13 }}>{fmt(v.total_benefice)}</td>
+                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: v.total_retour_loss > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                    {v.total_retour_loss > 0 ? `−${fmt(v.total_retour_loss)}` : '—'}
+                  </td>
+                  <td style={{
+                    fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600,
+                    color: v.net_vendor_profit >= 0 ? 'var(--success)' : 'var(--danger)'
+                  }}>
+                    {fmt(v.net_vendor_profit)}
+                  </td>
+                  <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--text-secondary)' }}>
+                    {fmt(v.merch_total_profit)}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

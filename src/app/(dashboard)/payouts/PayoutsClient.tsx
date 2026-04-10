@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Payout, Vendor, Order } from '@/lib/types'
 import { PayoutStatusBadge, OrderStatusBadge } from '@/components/StatusBadge'
 import { fmt, fmtDate } from '@/lib/utils'
-import { Plus, X, ChevronRight, Check } from 'lucide-react'
+import { Plus, X, ChevronRight, Check, ChevronDown } from 'lucide-react'
 
 interface Props {
   payouts: Payout[]
@@ -19,6 +19,10 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
   const supabase = createClient()
   const [showCreate, setShowCreate] = useState(!!preselectedVendorId)
   const [localPayouts, setLocalPayouts] = useState<Payout[]>(payouts)
+
+  // Filters
+  const [filterVendor, setFilterVendor] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
 
   // Create payout wizard state
   const [step, setStep] = useState<1 | 2>(1)
@@ -38,7 +42,6 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
       .eq('vendor_id', vendorId)
       .order('created_at', { ascending: false })
     setEligibleOrders((data ?? []) as Order[])
-    // Select all by default
     setSelectedOrderIds(new Set((data ?? []).map((o: Order) => o.id)))
     setLoadingOrders(false)
   }
@@ -73,19 +76,20 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
     }
   }
 
-  // Calculated totals from selected orders
+  // Calculated totals — per .MD spec:
+  // total_vendor_benefice = SUM(benefice_vendeur) WHERE LIVREE
+  // retour_loss = SUM(prix_vendeur) WHERE RETOUR
   const selected = eligibleOrders.filter(o => selectedOrderIds.has(o.id))
   const deliveredSelected = selected.filter(o => o.status === 'LIVREE')
   const retourSelected    = selected.filter(o => o.status === 'RETOUR')
-  const totalBenefice = deliveredSelected.reduce((s, o) => s + (o.vendor_benefice ?? 0), 0)
-  const retourLoss    = retourSelected.reduce((s, o) => s + (o.production_total ?? 0), 0)
+  const totalBenefice = deliveredSelected.reduce((s, o) => s + (o.benefice_vendeur ?? 0), 0)
+  const retourLoss    = retourSelected.reduce((s, o) => s + (o.prix_vendeur ?? 0), 0)
   const netPayout     = totalBenefice - retourLoss
 
   async function createPayout() {
     if (selected.length === 0) { setError('Select at least one order'); return }
     setCreating(true); setError('')
 
-    // 1. Insert payout
     const { data: payout, error: pe } = await supabase
       .from('payouts')
       .insert({
@@ -101,12 +105,10 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
 
     if (pe) { setError(pe.message); setCreating(false); return }
 
-    // 2. Insert payout_orders relations
     const relations = selected.map(o => ({ payout_id: payout.id, order_id: o.id }))
     const { error: re } = await supabase.from('payout_orders').insert(relations)
     if (re) { setError(re.message); setCreating(false); return }
 
-    // 3. Mark orders as vendor paid
     const { error: ue } = await supabase
       .from('orders')
       .update({ is_vendor_paid: true })
@@ -131,9 +133,19 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
     await supabase.from('payouts').update({ status: next }).eq('id', id)
   }
 
+  // ── Filtered list ──────────────────────────────────────────────────────────
+  const filtered = localPayouts.filter(p => {
+    if (filterVendor && p.vendor_id !== filterVendor) return false
+    if (filterStatus && p.status !== filterStatus) return false
+    return true
+  })
+
+  const totalEnAttente = localPayouts.filter(p => p.status === 'EN_ATTENTE').reduce((s, p) => s + p.net_payout, 0)
+  const totalSent      = localPayouts.filter(p => p.status === 'SENT').reduce((s, p) => s + p.net_payout, 0)
+
   return (
     <div style={{ maxWidth: 1100 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Payouts</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13.5, marginTop: 4 }}>{localPayouts.length} total payouts</p>
@@ -143,6 +155,22 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
             <Plus size={15} /> Create Payout
           </button>
         )}
+      </div>
+
+      {/* Summary KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 24 }}>
+        <div className="kpi-card">
+          <div className="kpi-label">Total Payouts</div>
+          <div className="kpi-value" style={{ fontSize: 22 }}>{localPayouts.length}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">En Attente</div>
+          <div className="kpi-value" style={{ fontSize: 22, color: 'var(--warning)' }}>{fmt(totalEnAttente)}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Sent</div>
+          <div className="kpi-value" style={{ fontSize: 22, color: 'var(--success)' }}>{fmt(totalSent)}</div>
+        </div>
       </div>
 
       {/* Create Payout Wizard */}
@@ -159,7 +187,6 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
             </button>
           </div>
 
-          {/* Step 1 */}
           {step === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
@@ -183,7 +210,6 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
             </div>
           )}
 
-          {/* Step 2 */}
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -197,7 +223,7 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
 
               {eligibleOrders.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: 13.5, padding: '16px 0' }}>
-                  No eligible orders. Orders must be LIVRÉE or RETOUR and not already assigned to a payout.
+                  No eligible orders. Orders must be LIVRÉE or RETOUR and not already in a payout.
                 </p>
               ) : (
                 <div className="card" style={{ overflowX: 'auto', maxHeight: 320, overflowY: 'auto' }}>
@@ -207,8 +233,9 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
                         <th style={{ width: 36 }}></th>
                         <th>Ref</th>
                         <th>Status</th>
-                        <th>Prod. Cost</th>
-                        <th>V. Benefice</th>
+                        <th>Prix Client</th>
+                        <th>Prix Vendeur</th>
+                        <th>Bénéfice Vendeur</th>
                         <th>Date</th>
                       </tr>
                     </thead>
@@ -231,8 +258,9 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
                           </td>
                           <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5 }}>#{o.order_ref}</td>
                           <td><OrderStatusBadge status={o.status} /></td>
-                          <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5 }}>{fmt(o.production_total)}</td>
-                          <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: 'var(--success)' }}>{fmt(o.vendor_benefice)}</td>
+                          <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5 }}>{fmt(o.prix_client)}</td>
+                          <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: 'var(--text-secondary)' }}>{fmt(o.prix_vendeur)}</td>
+                          <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: 'var(--success)' }}>{fmt(o.benefice_vendeur)}</td>
                           <td style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>{fmtDate(o.created_at)}</td>
                         </tr>
                       ))}
@@ -241,7 +269,6 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
                 </div>
               )}
 
-              {/* Totals summary */}
               {selected.length > 0 && (
                 <div style={{
                   background: 'var(--bg-elevated)', border: '1px solid var(--bg-border)',
@@ -249,8 +276,8 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
                   display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12,
                 }}>
                   <SummaryItem label="Orders Selected" value={String(selected.length)} />
-                  <SummaryItem label="Benefice (LIVRÉE)" value={fmt(totalBenefice)} color="var(--success)" />
-                  <SummaryItem label="Retour Loss" value={retourLoss > 0 ? `−${fmt(retourLoss)}` : '—'} color={retourLoss > 0 ? 'var(--danger)' : undefined} />
+                  <SummaryItem label="Bénéfice (LIVRÉE)" value={fmt(totalBenefice)} color="var(--success)" />
+                  <SummaryItem label="Retour Loss (prix_vendeur)" value={retourLoss > 0 ? `−${fmt(retourLoss)}` : '—'} color={retourLoss > 0 ? 'var(--danger)' : undefined} />
                   <SummaryItem label="Net Payout" value={fmt(netPayout)} color={netPayout >= 0 ? 'var(--success)' : 'var(--danger)'} bold />
                 </div>
               )}
@@ -271,6 +298,40 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
         </div>
       )}
 
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative' }}>
+          <select
+            className="input"
+            style={{ paddingRight: 32, appearance: 'none', cursor: 'pointer', minWidth: 160 }}
+            value={filterVendor}
+            onChange={e => setFilterVendor(e.target.value)}
+          >
+            <option value="">All Vendors</option>
+            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+          <ChevronDown size={13} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+        </div>
+        <div style={{ position: 'relative' }}>
+          <select
+            className="input"
+            style={{ paddingRight: 32, appearance: 'none', cursor: 'pointer', minWidth: 150 }}
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+          >
+            <option value="">All Statuses</option>
+            <option value="EN_ATTENTE">En Attente</option>
+            <option value="SENT">Sent</option>
+          </select>
+          <ChevronDown size={13} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+        </div>
+        {(filterVendor || filterStatus) && (
+          <button className="btn btn-ghost" onClick={() => { setFilterVendor(''); setFilterStatus('') }}>
+            <X size={13} /> Clear
+          </button>
+        )}
+      </div>
+
       {/* Payouts Table */}
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="data-table">
@@ -279,7 +340,7 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
               <th>Vendor</th>
               <th>Date</th>
               <th>Orders</th>
-              <th>Benefice</th>
+              <th>Bénéfice Vendeur</th>
               <th>Retour Loss</th>
               <th>Net Payout</th>
               <th>Status</th>
@@ -287,10 +348,10 @@ export default function PayoutsClient({ payouts, vendors, preselectedVendorId }:
             </tr>
           </thead>
           <tbody>
-            {localPayouts.length === 0 && (
+            {filtered.length === 0 && (
               <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48 }}>No payouts yet</td></tr>
             )}
-            {localPayouts.map(p => (
+            {filtered.map(p => (
               <tr key={p.id}>
                 <td style={{ fontWeight: 500 }}>{p.vendors?.name ?? '—'}</td>
                 <td style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>{fmtDate(p.date)}</td>
