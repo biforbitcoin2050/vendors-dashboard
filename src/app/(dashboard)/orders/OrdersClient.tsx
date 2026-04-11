@@ -201,7 +201,6 @@ export default function OrdersClient({ orders, vendors, filters }: Props) {
             <tr>
               <th>Order Ref</th>
               <th>Vendor</th>
-              <th>Client Phone</th>
               <th>Status</th>
               <th>Prix Client</th>
               <th>Prix Fournisseur</th>
@@ -217,7 +216,7 @@ export default function OrdersClient({ orders, vendors, filters }: Props) {
           <tbody>
             {localOrders.length === 0 && (
               <tr>
-                <td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48 }}>
+                <td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48 }}>
                   No orders found
                 </td>
               </tr>
@@ -248,9 +247,6 @@ export default function OrdersClient({ orders, vendors, filters }: Props) {
                   </td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
                     {order.vendors?.name ?? order.vendor_name ?? '—'}
-                  </td>
-                  <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                    {order.client_phone ?? '—'}
                   </td>
                   <td>
                     <StatusSelect
