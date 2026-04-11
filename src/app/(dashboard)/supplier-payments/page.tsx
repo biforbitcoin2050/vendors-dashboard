@@ -15,8 +15,9 @@ export default async function SupplierPaymentsPage() {
       .order('date', { ascending: false }),
     supabase
       .from('orders')
-      .select('id, order_ref')
+      .select('id, order_ref, vendor_name, prix_fournisseur')
       .eq('is_supplier_paid', false)
+      .eq('status', 'LIVREE')           // only LIVREE orders
       .order('created_at', { ascending: false })
       .limit(500),
   ])
@@ -24,7 +25,7 @@ export default async function SupplierPaymentsPage() {
   return (
     <SupplierPaymentsClient
       payments={(payments ?? []) as SupplierPayment[]}
-      unpaidOrders={(orders ?? []) as { id: string; order_ref: string }[]}
+      unpaidOrders={(orders ?? []) as { id: string; order_ref: string; vendor_name: string | null; prix_fournisseur: number }[]}
     />
   )
 }

@@ -5,11 +5,18 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { SupplierPayment } from '@/lib/types'
 import { fmt, fmtDate } from '@/lib/utils'
-import { Plus, X, Truck } from 'lucide-react'
+import { Plus, X, Truck, Check } from 'lucide-react'
+
+type UnpaidOrder = {
+  id: string
+  order_ref: string
+  vendor_name: string | null
+  prix_fournisseur: number
+}
 
 interface Props {
   payments: SupplierPayment[]
-  unpaidOrders: { id: string; order_ref: string }[]
+  unpaidOrders: UnpaidOrder[]
 }
 
 export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props) {
@@ -20,37 +27,66 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const [amount, setAmount] = useState('')
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [note, setNote] = useState('')
-  const [orderId, setOrderId] = useState('')
 
   const total = local.reduce((s, p) => s + p.amount, 0)
 
+  // Auto-compute amount from selected orders' prix_fournisseur
+  const selectedOrders = unpaidOrders.filter(o => selectedIds.has(o.id))
+  const autoAmount = selectedOrders.reduce((s, o) => s + (o.prix_fournisseur ?? 0), 0)
+
+  function toggleOrder(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (selectedIds.size === unpaidOrders.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(unpaidOrders.map(o => o.id)))
+    }
+  }
+
+  function resetForm() {
+    setShowForm(false)
+    setSelectedIds(new Set())
+    setNote('')
+    setError('')
+  }
+
   async function handleCreate() {
-    if (!amount || isNaN(parseFloat(amount))) { setError('Enter a valid amount'); return }
+    if (selectedIds.size === 0) { setError('Select at least one order'); return }
     setLoading(true); setError('')
+
+    // Create one supplier payment record per selected order
+    const rows = selectedOrders.map(o => ({
+      amount: o.prix_fournisseur ?? 0,
+      note: note || null,
+      order_id: o.id,
+    }))
 
     const { data, error: err } = await supabase
       .from('supplier_payments')
-      .insert({
-        amount: parseFloat(amount),
-        note: note || null,
-        order_id: orderId || null,
-      })
+      .insert(rows)
       .select('*, orders(id, order_ref)')
-      .single()
 
+    if (err) { setError(err.message); setLoading(false); return }
+
+    // Mark all selected orders as supplier paid
+    await supabase
+      .from('orders')
+      .update({ is_supplier_paid: true })
+      .in('id', Array.from(selectedIds))
+
+    setLocal(prev => [...(data as SupplierPayment[]), ...prev])
     setLoading(false)
-    if (err) { setError(err.message); return }
-
-    // If linked to an order, mark it as supplier paid
-    if (orderId) {
-      await supabase.from('orders').update({ is_supplier_paid: true }).eq('id', orderId)
-    }
-
-    setLocal(prev => [data as SupplierPayment, ...prev])
-    setAmount(''); setNote(''); setOrderId('')
-    setShowForm(false)
+    resetForm()
     router.refresh()
   }
 
@@ -61,7 +97,7 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
   }
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div style={{ maxWidth: 1000 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Supplier Payments</h1>
@@ -69,12 +105,12 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
             {local.length} payment{local.length !== 1 ? 's' : ''} · Total: <strong style={{ color: 'var(--text-primary)' }}>{fmt(total)}</strong>
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(v => !v)}>
+        <button className="btn btn-primary" onClick={() => showForm ? resetForm() : setShowForm(true)}>
           {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> Add Payment</>}
         </button>
       </div>
 
-      {/* Summary card */}
+      {/* KPI cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 24 }}>
         <div className="kpi-card">
           <div className="kpi-label">Total Paid to Supplier</div>
@@ -85,54 +121,100 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
           <div className="kpi-value" style={{ fontSize: 22 }}>{local.length}</div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-label">Unpaid Orders (supplier)</div>
+          <div className="kpi-label">Unpaid LIVRÉE Orders</div>
           <div className="kpi-value" style={{ fontSize: 22, color: unpaidOrders.length > 0 ? 'var(--warning)' : 'var(--success)' }}>
             {unpaidOrders.length}
           </div>
         </div>
       </div>
 
-      {/* Add payment form */}
+      {/* Add payment form — multi-select */}
       {showForm && (
-        <div className="card" style={{ padding: 20, marginBottom: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>New Supplier Payment</h3>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1', minWidth: 140 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase' }}>Amount (DA) *</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                placeholder="0"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div style={{ flex: '2', minWidth: 200 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase' }}>Note</label>
-              <input
-                className="input"
-                placeholder="Payment description…"
-                value={note}
-                onChange={e => setNote(e.target.value)}
-              />
-            </div>
-            <div style={{ flex: '2', minWidth: 200 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase' }}>Link to Order (optional)</label>
-              <select className="input" value={orderId} onChange={e => setOrderId(e.target.value)}>
-                <option value="">— None —</option>
-                {unpaidOrders.map(o => (
-                  <option key={o.id} value={o.id}>#{o.order_ref}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <button className="btn btn-primary" onClick={handleCreate} disabled={loading}>
-                {loading ? 'Saving…' : 'Add'}
-              </button>
-            </div>
+        <div className="card" style={{ padding: 20, marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600 }}>New Supplier Payment</h3>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={toggleAll}>
+              {selectedIds.size === unpaidOrders.length ? 'Deselect All' : 'Select All'}
+            </button>
           </div>
+
+          {unpaidOrders.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: 13.5, padding: '12px 0' }}>
+              No unpaid LIVRÉE orders found.
+            </p>
+          ) : (
+            <div style={{ border: '1px solid var(--bg-border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16, maxHeight: 340, overflowY: 'auto' }}>
+              <table className="data-table">
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-surface)' }}>
+                  <tr>
+                    <th style={{ width: 36 }}></th>
+                    <th>Order Ref</th>
+                    <th>Vendor</th>
+                    <th>Prix Fournisseur</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unpaidOrders.map(o => (
+                    <tr
+                      key={o.id}
+                      style={{ cursor: 'pointer', opacity: selectedIds.has(o.id) ? 1 : 0.5 }}
+                      onClick={() => toggleOrder(o.id)}
+                    >
+                      <td>
+                        <div style={{
+                          width: 18, height: 18, borderRadius: 4,
+                          border: `2px solid ${selectedIds.has(o.id) ? 'var(--accent)' : 'var(--bg-border)'}`,
+                          background: selectedIds.has(o.id) ? 'var(--accent)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {selectedIds.has(o.id) && <Check size={11} color="white" />}
+                        </div>
+                      </td>
+                      <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5 }}>#{o.order_ref}</td>
+                      <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{o.vendor_name ?? '—'}</td>
+                      <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: 'var(--accent)' }}>
+                        {fmt(o.prix_fournisseur ?? 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Summary + note + confirm */}
+          {selectedIds.size > 0 && (
+            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--bg-border)', borderRadius: 10, padding: '14px 18px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 32 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Orders Selected</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedIds.size}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Total to Pay Supplier</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)', fontFamily: 'DM Mono, monospace' }}>{fmt(autoAmount)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <input
+              className="input"
+              style={{ flex: 1 }}
+              placeholder="Note (optional)…"
+              value={note}
+              onChange={e => setNote(e.target.value)}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={handleCreate}
+              disabled={loading || selectedIds.size === 0}
+            >
+              {loading ? 'Saving…' : `Confirm Payment${selectedIds.size > 0 ? ` (${selectedIds.size} orders)` : ''}`}
+            </button>
+          </div>
+
           {error && <p style={{ fontSize: 13, color: 'var(--danger)', marginTop: 10 }}>{error}</p>}
         </div>
       )}
