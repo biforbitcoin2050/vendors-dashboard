@@ -12,14 +12,16 @@ type UnpaidOrder = {
   order_ref: string
   vendor_name: string | null
   prix_fournisseur: number
+  status: string
 }
 
 interface Props {
   payments: SupplierPayment[]
   unpaidOrders: UnpaidOrder[]
+  totalLeftToPay: number
 }
 
-export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props) {
+export default function SupplierPaymentsClient({ payments, unpaidOrders, totalLeftToPay }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [local, setLocal] = useState<SupplierPayment[]>(payments)
@@ -111,7 +113,7 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
       </div>
 
       {/* KPI cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         <div className="kpi-card">
           <div className="kpi-label">Total Paid to Supplier</div>
           <div className="kpi-value" style={{ fontSize: 22 }}>{fmt(total)}</div>
@@ -121,9 +123,15 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
           <div className="kpi-value" style={{ fontSize: 22 }}>{local.length}</div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-label">Unpaid LIVRÉE Orders</div>
+          <div className="kpi-label">Unpaid LIVRÉE & RETOUR</div>
           <div className="kpi-value" style={{ fontSize: 22, color: unpaidOrders.length > 0 ? 'var(--warning)' : 'var(--success)' }}>
             {unpaidOrders.length}
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Total Left to Pay</div>
+          <div className="kpi-value" style={{ fontSize: 22, color: totalLeftToPay > 0 ? 'var(--danger)' : 'var(--success)' }}>
+            {fmt(totalLeftToPay)}
           </div>
         </div>
       </div>
@@ -140,7 +148,7 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
 
           {unpaidOrders.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: 13.5, padding: '12px 0' }}>
-              No unpaid LIVRÉE orders found.
+              No unpaid eligible orders (LIVRÉE or RETOUR) found.
             </p>
           ) : (
             <div style={{ border: '1px solid var(--bg-border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16, maxHeight: 340, overflowY: 'auto' }}>
@@ -150,6 +158,7 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
                     <th style={{ width: 36 }}></th>
                     <th>Order Ref</th>
                     <th>Vendor</th>
+                    <th>Status</th>
                     <th>Prix Fournisseur</th>
                   </tr>
                 </thead>
@@ -172,6 +181,18 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders }: Props
                       </td>
                       <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5 }}>#{o.order_ref}</td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{o.vendor_name ?? '—'}</td>
+                      <td>
+                        <span style={{ 
+                          fontSize: 11, 
+                          fontWeight: 600, 
+                          padding: '2px 6px', 
+                          borderRadius: 4, 
+                          border: `1px solid ${o.status === 'LIVREE' ? 'var(--success)' : 'var(--warning)'}`,
+                          color: o.status === 'LIVREE' ? 'var(--success)' : 'var(--warning)'
+                        }}>
+                          {o.status}
+                        </span>
+                      </td>
                       <td style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: 'var(--accent)' }}>
                         {fmt(o.prix_fournisseur ?? 0)}
                       </td>
