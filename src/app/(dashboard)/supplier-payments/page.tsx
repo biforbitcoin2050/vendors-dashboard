@@ -22,18 +22,26 @@ export default async function SupplierPaymentsPage() {
       .limit(500),
     supabase
       .from('orders')
-      .select('prix_fournisseur')
+      .select('prix_fournisseur, status')
       .eq('is_supplier_paid', false)
       .in('status', ['LIVREE', 'RETOUR'])
   ])
 
-  const totalLeftToPay = allUnpaid?.reduce((sum, o) => sum + (o.prix_fournisseur || 0), 0) || 0
+  const livreeData = allUnpaid?.filter(o => o.status === 'LIVREE') || []
+  const retourData = allUnpaid?.filter(o => o.status === 'RETOUR') || []
+
+  const stats = {
+    livreeCount: livreeData.length,
+    livreeTotal: livreeData.reduce((sum, o) => sum + (o.prix_fournisseur || 0), 0),
+    retourCount: retourData.length,
+    retourTotal: retourData.reduce((sum, o) => sum + (o.prix_fournisseur || 0), 0)
+  }
 
   return (
     <SupplierPaymentsClient
       payments={(payments ?? []) as SupplierPayment[]}
       unpaidOrders={(orders ?? []) as { id: string; order_ref: string; vendor_name: string | null; prix_fournisseur: number; status: string }[]}
-      totalLeftToPay={totalLeftToPay}
+      stats={stats}
     />
   )
 }

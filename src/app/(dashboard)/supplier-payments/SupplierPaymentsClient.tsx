@@ -18,10 +18,15 @@ type UnpaidOrder = {
 interface Props {
   payments: SupplierPayment[]
   unpaidOrders: UnpaidOrder[]
-  totalLeftToPay: number
+  stats: {
+    livreeCount: number
+    livreeTotal: number
+    retourCount: number
+    retourTotal: number
+  }
 }
 
-export default function SupplierPaymentsClient({ payments, unpaidOrders, totalLeftToPay }: Props) {
+export default function SupplierPaymentsClient({ payments, unpaidOrders, stats }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [local, setLocal] = useState<SupplierPayment[]>(payments)
@@ -113,25 +118,42 @@ export default function SupplierPaymentsClient({ payments, unpaidOrders, totalLe
       </div>
 
       {/* KPI cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
-        <div className="kpi-card">
-          <div className="kpi-label">Total Paid to Supplier</div>
-          <div className="kpi-value" style={{ fontSize: 22 }}>{fmt(total)}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Payments Count</div>
-          <div className="kpi-value" style={{ fontSize: 22 }}>{local.length}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Unpaid LIVRÉE & RETOUR</div>
-          <div className="kpi-value" style={{ fontSize: 22, color: unpaidOrders.length > 0 ? 'var(--warning)' : 'var(--success)' }}>
-            {unpaidOrders.length}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+          <div className="kpi-card">
+            <div className="kpi-label">Total Paid to Supplier</div>
+            <div className="kpi-value" style={{ fontSize: 22 }}>{fmt(total)}</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Total Payments</div>
+            <div className="kpi-value" style={{ fontSize: 22 }}>{local.length}</div>
           </div>
         </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Total Left to Pay</div>
-          <div className="kpi-value" style={{ fontSize: 22, color: totalLeftToPay > 0 ? 'var(--danger)' : 'var(--success)' }}>
-            {fmt(totalLeftToPay)}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+          <div className="kpi-card">
+            <div className="kpi-label">Unpaid LIVRÉE (Count)</div>
+            <div className="kpi-value" style={{ fontSize: 22, color: stats.livreeCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
+              {stats.livreeCount}
+            </div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Unpaid LIVRÉE (Total)</div>
+            <div className="kpi-value" style={{ fontSize: 22, color: stats.livreeTotal > 0 ? 'var(--danger)' : 'var(--success)' }}>
+              {fmt(stats.livreeTotal)}
+            </div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Unpaid RETOUR (Count)</div>
+            <div className="kpi-value" style={{ fontSize: 22, color: stats.retourCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
+              {stats.retourCount}
+            </div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Unpaid RETOUR (Total)</div>
+            <div className="kpi-value" style={{ fontSize: 22, color: stats.retourTotal > 0 ? 'var(--danger)' : 'var(--success)' }}>
+              {fmt(stats.retourTotal)}
+            </div>
           </div>
         </div>
       </div>
