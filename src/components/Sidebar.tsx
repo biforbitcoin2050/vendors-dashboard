@@ -8,6 +8,7 @@ import {
   LayoutDashboard, ShoppingBag, Users, CreditCard,
   Truck, LogOut, ChevronRight, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
+import ThemeToggle from './ThemeToggle'
 
 const NAV = [
   { href: '/',                  label: 'Overview',          icon: LayoutDashboard },
@@ -22,12 +23,14 @@ export default function Sidebar() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [collapsed, setCollapsed] = useState(false)
+  // Default to collapsed (true) — sidebar hidden by default
+  const [collapsed, setCollapsed] = useState(true)
 
   // Persist collapse state across page navigations
   useEffect(() => {
     const stored = localStorage.getItem('sidebar-collapsed')
-    if (stored === 'true') setCollapsed(true)
+    // Only expand if user has explicitly set it to 'false'
+    if (stored === 'false') setCollapsed(false)
   }, [])
 
   function toggleCollapse() {
@@ -97,12 +100,12 @@ export default function Sidebar() {
             transition: 'background 0.15s, color 0.15s',
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)'
-            ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)'
+            (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)'
           }}
           onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'none'
-            ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)'
+            (e.currentTarget as HTMLButtonElement).style.background = 'none';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)'
           }}
         >
           {collapsed
@@ -148,6 +151,11 @@ export default function Sidebar() {
           )
         })}
       </nav>
+
+      {/* Theme Toggle */}
+      <div style={{ marginBottom: 6 }}>
+        <ThemeToggle collapsed={collapsed} />
+      </div>
 
       {/* Logout */}
       <button
